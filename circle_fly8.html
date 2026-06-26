@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>원주비행 연습</title>
+<style>
+  :root{
+    --bg:#11151C;
+    --panel:#1B212B;
+    --panel-line: rgba(201,214,227,0.14);
+    --orange:#FF7A1A;
+    --red:#FF3B3B;
+    --blue:#4FB8FF;
+    --line:#C9D6E3;
+    --line-dim: rgba(201,214,227,0.28);
+    --text-dim: rgba(201,214,227,0.55);
+    --font-mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body{
+    margin:0; padding:0;
+    width:100%; height:100%;
+    overflow:hidden;
+    background:var(--bg);
+    color:var(--line);
+    font-family:var(--font-sans);
+    position:fixed;
+    touch-action:none;
+  }
+
+  #app{
+    position:fixed; inset:0;
+    display:flex; flex-direction:column;
+  }
+
+  /* ---------- top HUD bar ---------- */
+  #hud-top{
+    flex:0 0 auto;
+    display:flex; align-items:center; justify-content:space-between;
+    padding: max(10px, env(safe-area-inset-top)) 14px 10px 14px;
+    background:linear-gradient(to bottom, rgba(17,21,28,0.95), rgba(17,21,28,0.0));
+    position:relative; z-index:5;
+  }
+  #title-block{ display:flex; flex-direction:column; gap:2px; }
+  #title-block .eyebrow{
+    font-family:var(--font-mono);
+    font-size:10px; letter-spacing:0.18em; color:var(--orange);
+    text-transform:uppercase;
+  }
+  #title-block .name{ font-size:14px; font-weight:600; color:var(--line); letter-spacing:0.01em; }
+
+  #wind-readout{
+    font-family:var(--font-mono); font-size:11px; color:var(--blue);
+    text-align:right; letter-spacing:0.04em;
+  }
+  #wind-readout .lbl{ color:var(--text-dim); margin-right:4px; }
+
+  #resetBtn{
+    margin-left:12px;
+    background:var(--panel);
+    border:1px solid var(--panel-line);
+    color:var(--line);
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:0.05em;
+    padding:7px 12px;
+    border-radius:6px;
+    cursor:pointer;
+  }
+  #resetBtn:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+  #resetBtn:active{ background:#222B38; }
+
+  /* ---------- stage ---------- */
+  #stageWrap{ position:relative; flex:1 1 auto; min-height:0; }
+  #stage{ position:absolute; inset:0; display:block; }
+
+  /* ---------- bottom control zone ---------- */
+  #hud-bottom{
+    position:absolute; left:0; right:0; bottom:0;
+    display:flex; justify-content:space-between; align-items:flex-end;
+    padding: 18px 18px max(18px, env(safe-area-inset-bottom)) 18px;
+    pointer-events:none; /* re-enabled on stick itself */
+    background:linear-gradient(to top, rgba(17,21,28,0.85), rgba(17,21,28,0.0));
+    z-index:4;
+  }
+
+  .stick{
+    pointer-events:auto;
+    width:108px; height:108px;
+    border-radius:50%;
+    background:radial-gradient(circle at 50% 45%, rgba(201,214,227,0.07), rgba(201,214,227,0.02));
+    border:1px solid var(--panel-line);
+    position:relative;
+    touch-action:none;
+  }
+  .stick.left{
+    /* visually hint horizontal-only travel */
+    border-radius:50px;
+    height:88px;
+  }
+  .stick .knob{
+    position:absolute; left:50%; top:50%;
+    width:42px; height:42px;
+    margin:-21px 0 0 -21px;
+    border-radius:50%;
+    background:var(--panel);
+    border:1px solid rgba(201,214,227,0.35);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.3) inset;
+    transition:none;
+  }
+  .stick.left .knob{ background:linear-gradient(180deg,#222B38,#1B212B); }
+  .stick.right .knob{ background:linear-gradient(180deg,#222B38,#1B212B); }
+
+  .stick-col{ display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .stick-label{
+    font-family:var(--font-mono); font-size:10px; letter-spacing:0.1em;
+    color:var(--text-dim); text-transform:uppercase;
+  }
+
+  #caption{
+    position:absolute; top:54px; left:0; right:0;
+    text-align:center; pointer-events:none; z-index:3;
+    font-size:12px; color:var(--text-dim); letter-spacing:0.01em;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="hud-top">
+    <div id="title-block">
+      <div class="eyebrow">ORBIT TRAINER</div>
+      <div class="name">원주비행 연습</div>
+    </div>
+    <div style="display:flex; align-items:center;">
+      <div id="wind-readout"><span class="lbl">WIND</span><span id="windPct">0%</span></div>
+      <button id="resetBtn">리셋</button>
+    </div>
+  </div>
+
+  <div id="caption">네 개의 라바콘을 따라 원을 그리며 날아보세요. 바람은 계속 바뀝니다.</div>
+
+  <div id="stageWrap">
+    <canvas id="stage"></canvas>
+  </div>
+
+  <div id="hud-bottom">
+    <div class="stick-col">
+      <div class="stick left" id="leftStick">
+        <div class="knob" id="leftKnob"></div>
+      </div>
+      <div class="stick-label">러더 (좌우)</div>
+    </div>
+    <div class="stick-col">
+      <div class="stick right" id="rightStick">
+        <div class="knob" id="rightKnob"></div>
+      </div>
+      <div class="stick-label">엘리베이터 · 에일러런</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ============================================================
+  // CONFIG  (tweak these if the feel needs adjusting)
+  // ============================================================
+  const CFG = {
+    yawRateMaxDeg: 150,      // 최대 요(yaw) 각속도, deg/sec, 풀 러더 입력 시
+    speedTau: 0.25,          // 스틱 입력 -> 속도 반응 지연(초), 작을수록 즉각 반응
+    maxSpeedFactor: 0.9,     // 드론 최대 이동속도 = R(궤도 반경) * 이 값  (px/sec)
+    stickSensitivity: 0.5,   // 스틱 민감도 배수 (1.0 = 풀스틱일 때 최대 반응, 0.5 = 절반)
+    droneSizeFactor: 0.045,  // 드론 팔 길이 = min(w,h) * 이 값
+    orbitRadiusFactor: 0.32, // 라바콘 궤도 반경 = min(w,h) * 이 값
+    windChangeInterval: 10,  // 바람 방향/세기가 바뀌는 평균 주기(초)
+    windChangeJitter: 2,     // 주기의 ±지터(초) — 매번 정확히 10초가 아니라 자연스럽게
+    windTransitionTau: 3.0,  // 새 바람 값으로 끊김 없이(연속적으로) 도달하는 데 걸리는 시간(초)
+    ellipseCompressionRatio: 15, // 모니터링용 타원의 장반경:단반경 비율 (15 = 위아래로 1/15 압축)
+    trailMaxPoints: 260,
+    trailSampleEveryMs: 40
+  };
+
+  // ============================================================
+  // DOM refs
+  // ============================================================
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const windPctEl = document.getElementById('windPct');
+  const resetBtn = document.getElementById('resetBtn');
+
+  // ============================================================
+  // World state
+  // ============================================================
+  let W = 0, H = 0, DPR = 1;          // css px size & device pixel ratio
+  let cx = 0, cy = 0;                 // stage center
+  let R = 0;                          // cone orbit radius
+  let armLen = 0;                     // drone arm length
+  let maxSpeed = 0;                   // drone max own-thrust speed, px/s
+  let maxWindSpeed = 0;               // px/s
+
+  let cones = [];                     // {x,y}
+  let drone = { x:0, y:0, theta:0, fwd:0, lat:0 };
+  let wind = { vx:0, vy:0 };
+  let windTarget = { vx:0, vy:0 };
+  let windTimer = 0;
+  let nextWindChangeAt = 0;
+  let trail = [];
+  let lastTrailSample = 0;
+
+  function layout(){
+    DPR = Math.min(window.devicePixelRatio || 1, 2.5);
+    const wrap = document.getElementById('stageWrap');
+    const rect = wrap.getBoundingClientRect();
+    W = rect.width; H = rect.height;
+
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+
+    cx = W/2; cy = H/2;
+    const minDim = Math.min(W,H);
+    R = minDim * CFG.orbitRadiusFactor;
+    armLen = minDim * CFG.droneSizeFactor;
+    maxSpeed = R * CFG.maxSpeedFactor;
+    maxWindSpeed = armLen * 0.5; // 이전 값(armLen*2)의 1/4 수준
+
+    cones = [
+      { x: cx,     y: cy - R }, // top
+      { x: cx + R, y: cy     }, // right
+      { x: cx,     y: cy + R }, // bottom
+      { x: cx - R, y: cy     }  // left
+    ];
+  }
+
+  function resetDrone(){
+    // start just inside the orbit at the bottom (6 o'clock) cone, facing right (east)
+    drone.x = cx;
+    drone.y = cy + R * 0.85;
+    drone.theta = Math.PI/2; // 오른쪽(동쪽)을 보도록 시작 (빨간 점=후방은 왼쪽을 향함)
+    drone.fwd = 0;
+    drone.lat = 0;
+    wind.vx = 0; wind.vy = 0;
+    windTarget.vx = 0; windTarget.vy = 0;
+    windTimer = 0;
+    nextWindChangeAt = 0; // forces an immediate fresh pick on the next update() tick
+    trail = [];
+  }
+
+  // ============================================================
+  // Joystick
+  // ============================================================
+  function makeJoystick(baseEl, knobEl, opts){
+    const state = { x:0, y:0, active:false, pointerId:null };
+    const maxDist = opts.maxDist;
+    const lockY = !!opts.lockY;
+    const sensitivity = (opts.sensitivity != null) ? opts.sensitivity : 1;
+
+    function update(clientX, clientY){
+      const r = baseEl.getBoundingClientRect();
+      const ccx = r.left + r.width/2;
+      const ccy = r.top + r.height/2;
+      let dx = clientX - ccx;
+      let dy = lockY ? 0 : (clientY - ccy);
+
+      const dist = Math.min(Math.hypot(dx,dy), maxDist);
+      const ang = Math.atan2(dy, dx);
+      let kx, ky;
+      if(lockY){
+        kx = Math.max(-maxDist, Math.min(maxDist, dx));
+        ky = 0;
+      } else {
+        kx = Math.cos(ang)*dist;
+        ky = Math.sin(ang)*dist;
+      }
+      // knob is drawn at the full physical position (keeps finger travel feeling natural);
+      // sensitivity only scales the control value sent to the physics
+      knobEl.style.transform = `translate(${kx}px, ${ky}px)`;
+      state.x = (kx / maxDist) * sensitivity;              // -1..1, right positive
+      state.y = lockY ? 0 : -(ky / maxDist) * sensitivity;  // -1..1, up positive
+    }
+
+    function reset(){
+      state.x = 0; state.y = 0;
+      knobEl.style.transform = 'translate(0px,0px)';
+    }
+
+    baseEl.addEventListener('pointerdown', (e)=>{
+      state.active = true;
+      state.pointerId = e.pointerId;
+      baseEl.setPointerCapture(e.pointerId);
+      update(e.clientX, e.clientY);
+      e.preventDefault();
+    });
+    baseEl.addEventListener('pointermove', (e)=>{
+      if(state.active && e.pointerId === state.pointerId){
+        update(e.clientX, e.clientY);
+        e.preventDefault();
+      }
+    });
+    function end(e){
+      if(e.pointerId === state.pointerId){
+        state.active = false;
+        state.pointerId = null;
+        reset();
+      }
+    }
+    baseEl.addEventListener('pointerup', end);
+    baseEl.addEventListener('pointercancel', end);
+
+    return state;
+  }
+
+  const leftStick = makeJoystick(
+    document.getElementById('leftStick'),
+    document.getElementById('leftKnob'),
+    { maxDist: 34, lockY: true, sensitivity: CFG.stickSensitivity }
+  );
+  const rightStick = makeJoystick(
+    document.getElementById('rightStick'),
+    document.getElementById('rightKnob'),
+    { maxDist: 34, lockY: false, sensitivity: CFG.stickSensitivity }
+  );
+
+  // ============================================================
+  // Physics update
+  // ============================================================
+  function pickNewWindTarget(){
+    const ang = Math.random() * Math.PI * 2;
+    const mag = Math.random() * maxWindSpeed; // 0 ~ 최대풍속 사이 랜덤
+    windTarget.vx = Math.cos(ang) * mag;
+    windTarget.vy = Math.sin(ang) * mag;
+  }
+
+  function update(dt){
+    const rudderIn   = leftStick.x;   // -1..1
+    const elevatorIn = rightStick.y;  // -1..1, up = forward
+    const aileronIn  = rightStick.x;  // -1..1, right = right
+
+    // yaw
+    const yawRateMax = CFG.yawRateMaxDeg * Math.PI/180;
+    drone.theta += rudderIn * yawRateMax * dt;
+
+    // local thrust response with a bit of inertia (tilt lag)
+    const smooth = 1 - Math.exp(-dt / CFG.speedTau);
+    const targetFwd = elevatorIn * maxSpeed;
+    const targetLat = aileronIn * maxSpeed;
+    drone.fwd += (targetFwd - drone.fwd) * smooth;
+    drone.lat += (targetLat - drone.lat) * smooth;
+
+    // local -> world velocity (matches canvas clockwise rotation convention)
+    const s = Math.sin(drone.theta), c = Math.cos(drone.theta);
+    const vx = drone.fwd * s + drone.lat * c;
+    const vy = -drone.fwd * c + drone.lat * s;
+
+    // wind: pick a new random target roughly every ~10s, then ease toward it
+    // continuously (no sudden jumps) so direction/strength feel natural in between
+    windTimer += dt;
+    if(windTimer >= nextWindChangeAt){
+      pickNewWindTarget();
+      windTimer = 0;
+      nextWindChangeAt = CFG.windChangeInterval + (Math.random()*2-1)*CFG.windChangeJitter;
+    }
+    const windFactor = 1 - Math.exp(-dt / CFG.windTransitionTau);
+    wind.vx += (windTarget.vx - wind.vx) * windFactor;
+    wind.vy += (windTarget.vy - wind.vy) * windFactor;
+    const wMag = Math.hypot(wind.vx, wind.vy);
+
+    drone.x += (vx + wind.vx) * dt;
+    drone.y += (vy + wind.vy) * dt;
+
+    // trail sampling
+    const now = performance.now();
+    if(now - lastTrailSample > CFG.trailSampleEveryMs){
+      trail.push({x: drone.x, y: drone.y});
+      if(trail.length > CFG.trailMaxPoints) trail.shift();
+      lastTrailSample = now;
+    }
+
+    // HUD readout
+    const pct = Math.round((wMag / maxWindSpeed) * 100);
+    windPctEl.textContent = pct + '%';
+  }
+
+  // ============================================================
+  // Render
+  // ============================================================
+  function render(){
+    ctx.clearRect(0,0,W,H);
+
+    // orbit guide (dashed circle through the cones)
+    ctx.save();
+    ctx.setLineDash([5,7]);
+    ctx.strokeStyle = 'rgba(201,214,227,0.18)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+
+    // trail
+    if(trail.length > 1){
+      ctx.save();
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      for(let i=1;i<trail.length;i++){
+        const t = i/trail.length;
+        ctx.strokeStyle = `rgba(79,184,255,${0.06 + t*0.22})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(trail[i-1].x, trail[i-1].y);
+        ctx.lineTo(trail[i].x, trail[i].y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // cones
+    cones.forEach(p=>{
+      ctx.beginPath();
+      ctx.fillStyle = '#FF7A1A';
+      ctx.arc(p.x, p.y, 8, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(255,122,26,0.18)';
+      ctx.arc(p.x, p.y, 16, 0, Math.PI*2);
+      ctx.fill();
+    });
+
+    // ellipse monitor: compressed top-view overlay, drawn on top of the circle
+    drawEllipseMonitor();
+
+    // wind arrow, dead center of the screen
+    drawWindArrow();
+
+    // drone
+    drawDrone();
+  }
+
+  // 실제 좌표 -> 타원 모니터 좌표로 투영.
+  // 좌우(x)는 그대로, 상하(y)는 중심 기준으로 반전 + 1/ratio 압축.
+  // (12시 <-> 6시가 서로 바뀌고, 3시/9시는 그대로 유지됨)
+  function toMonitor(px, py){
+    return {
+      x: px,
+      y: cy - (py - cy) / CFG.ellipseCompressionRatio
+    };
+  }
+
+  function drawEllipseMonitor(){
+    const b = R / CFG.ellipseCompressionRatio; // 타원 단반경
+
+    ctx.save();
+
+    // 타원 가이드 라인
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, R, b, 0, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(79,184,255,0.55)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // 라바콘 위치를 투영
+    cones.forEach(p=>{
+      const m = toMonitor(p.x, p.y);
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(255,122,26,0.9)';
+      ctx.arc(m.x, m.y, 3, 0, Math.PI*2);
+      ctx.fill();
+    });
+
+    // 드론 현재 위치를 점으로 투영
+    const dm = toMonitor(drone.x, drone.y);
+    ctx.beginPath();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.strokeStyle = 'rgba(79,184,255,0.95)';
+    ctx.lineWidth = 1.5;
+    ctx.arc(dm.x, dm.y, 4.5, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawWindArrow(){
+    const ang = Math.atan2(wind.vy, wind.vx);
+    const mag = Math.hypot(wind.vx, wind.vy);
+    const t = Math.min(mag / maxWindSpeed, 1);
+    const len = 14 + t*16;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    // faint compass ring
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(201,214,227,0.18)';
+    ctx.lineWidth = 1;
+    ctx.arc(0,0, 22, 0, Math.PI*2);
+    ctx.stroke();
+
+    ctx.rotate(ang);
+    ctx.strokeStyle = `rgba(79,184,255,${0.55 + t*0.45})`;
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-len*0.5, 0);
+    ctx.lineTo(len*0.5, 0);
+    ctx.stroke();
+    // arrow head
+    ctx.beginPath();
+    ctx.moveTo(len*0.5, 0);
+    ctx.lineTo(len*0.5 - 6, -4.5);
+    ctx.lineTo(len*0.5 - 6, 4.5);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function drawDrone(){
+    const L = armLen;
+    ctx.save();
+    ctx.translate(drone.x, drone.y);
+    ctx.rotate(drone.theta);
+
+    // arms (X), local forward = up (0,-1)
+    const tips = [
+      { a: 45  }, { a: 135 }, { a: 225 }, { a: 315 }
+    ].map(o=>{
+      const r = o.a * Math.PI/180;
+      return { x: L*Math.sin(r), y: -L*Math.cos(r) };
+    });
+
+    ctx.strokeStyle = 'rgba(201,214,227,0.85)';
+    ctx.lineWidth = 2.5;
+    tips.forEach(tp=>{
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      ctx.lineTo(tp.x, tp.y);
+      ctx.stroke();
+    });
+
+    // motor rings at tips
+    tips.forEach(tp=>{
+      ctx.beginPath();
+      ctx.fillStyle = '#C9D6E3';
+      ctx.arc(tp.x, tp.y, 4.2, 0, Math.PI*2);
+      ctx.fill();
+    });
+
+    // body
+    ctx.beginPath();
+    ctx.fillStyle = '#1B212B';
+    ctx.strokeStyle = 'rgba(201,214,227,0.85)';
+    ctx.lineWidth = 1.5;
+    ctx.arc(0,0, L*0.28, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+
+    // rear marker (red dot) - bottom of the X
+    ctx.beginPath();
+    ctx.fillStyle = '#FF3B3B';
+    ctx.arc(0, L*0.58, L*0.16, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // ============================================================
+  // Loop
+  // ============================================================
+  let lastT = performance.now();
+  function loop(now){
+    const dt = Math.min((now - lastT) / 1000, 0.05);
+    lastT = now;
+    update(dt);
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  // ============================================================
+  // Init
+  // ============================================================
+  function init(){
+    layout();
+    resetDrone();
+    requestAnimationFrame(loop);
+  }
+
+  window.addEventListener('resize', ()=>{
+    layout();
+  });
+  resetBtn.addEventListener('click', resetDrone);
+
+  init();
+})();
+</script>
+</body>
+</html>
